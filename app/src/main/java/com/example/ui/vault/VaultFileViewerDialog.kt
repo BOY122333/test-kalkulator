@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Share
@@ -56,8 +55,7 @@ fun VaultFileViewerDialog(
     item: VaultItem,
     vaultRepo: VaultRepository,
     onDismiss: () -> Unit,
-    onExport: () -> Unit,
-    onSyncCloud: () -> Unit
+    onExport: () -> Unit
 ) {
     val context = LocalContext.current
     val tempFile = remember(item.id) {
@@ -186,12 +184,15 @@ fun VaultFileViewerDialog(
                     }
 
                     Button(
-                        onClick = onSyncCloud,
-                        modifier = Modifier.weight(1f)
+                        onClick = {
+                            tempFile?.let { shareFile(it) }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = tempFile != null
                     ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Cloud Sync")
+                        Text("Bagikan")
                     }
                 }
             }

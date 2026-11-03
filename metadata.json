@@ -1,6 +1,6 @@
 {
-  "name": "Remix Remix NetSubnet Vault 22",
-  "description": "Professional IPv4 \u0026 VLSM Subnet Calculator with an authenticated Private Cloud Vault and PHP Admin Panel without SQL database",
+  "name": "NetSubnet",
+  "description": "Kalkulator Subnetting IPv4 & VLSM Terpadu dengan Brankas File Terenkripsi Lokal, Kunci Aplikasi, dan Pengaturan Keamanan Penuh di Perangkat",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

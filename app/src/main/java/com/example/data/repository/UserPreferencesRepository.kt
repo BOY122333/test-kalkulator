@@ -25,14 +25,8 @@ class UserPreferencesRepository(private val context: Context) {
         private val KEY_BIOMETRIC_ENABLED = booleanPreferencesKey("vault_biometric_enabled")
         private val KEY_FAILED_ATTEMPTS = intPreferencesKey("vault_failed_attempts")
         private val KEY_LOCKOUT_UNTIL = longPreferencesKey("vault_lockout_until")
-        private val KEY_SERVER_URL = stringPreferencesKey("cloud_server_url")
-        private val KEY_AUTH_TOKEN = stringPreferencesKey("cloud_auth_token")
-        private val KEY_AUTH_USERNAME = stringPreferencesKey("cloud_auth_username")
-        private val KEY_ADMIN_TOKEN = stringPreferencesKey("cloud_admin_token")
-        private val KEY_ADMIN_USERNAME = stringPreferencesKey("cloud_admin_username")
-        private val KEY_HISTORY_JSON = stringPreferencesKey("calc_history_json")
-        private val KEY_SECRET_TRIGGER_INFO_SEEN = booleanPreferencesKey("vault_trigger_info_seen")
         private val KEY_SECRET_IP_CODE = stringPreferencesKey("vault_secret_ip_code")
+        private val KEY_HISTORY_JSON = stringPreferencesKey("calc_history_json")
 
         // Personalization & Branding Settings
         private val KEY_DISPLAY_APP_NAME = stringPreferencesKey("pref_display_app_name")
@@ -49,11 +43,10 @@ class UserPreferencesRepository(private val context: Context) {
 
         const val DEFAULT_PIN = "1234"
         const val DEFAULT_SECRET_IP = "192.168.99.99"
-        const val DEFAULT_SERVER_URL = "http://10.0.2.2/backend_php/api.php"
         const val DEFAULT_DISPLAY_APP_NAME = "NetSubnet"
-        const val DEFAULT_APP_DESCRIPTION = "Kalkulator Subnetting IPv4 & VLSM Terpadu dengan Ruang Rahasia"
+        const val DEFAULT_APP_DESCRIPTION = "Kalkulator Subnetting IPv4 & VLSM Terpadu dengan Brankas Privat On-Device"
         const val DEFAULT_ACCENT_THEME = "CYAN"
-        const val DEFAULT_OPENING_MODE = "NONE" // "NONE", "BANNER_IMAGE", "ANIMATION"
+        const val DEFAULT_OPENING_MODE = "NONE" // "NONE", "FAKE_CRASH", "BANNER"
     }
 
     private fun hashPin(pin: String): String {
@@ -67,11 +60,6 @@ class UserPreferencesRepository(private val context: Context) {
     val biometricEnabledFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_BIOMETRIC_ENABLED] ?: false }
     val failedAttemptsFlow: Flow<Int> = context.dataStore.data.map { it[KEY_FAILED_ATTEMPTS] ?: 0 }
     val lockoutUntilFlow: Flow<Long> = context.dataStore.data.map { it[KEY_LOCKOUT_UNTIL] ?: 0L }
-    val serverUrlFlow: Flow<String> = context.dataStore.data.map { it[KEY_SERVER_URL] ?: DEFAULT_SERVER_URL }
-    val authTokenFlow: Flow<String?> = context.dataStore.data.map { it[KEY_AUTH_TOKEN] }
-    val authUsernameFlow: Flow<String?> = context.dataStore.data.map { it[KEY_AUTH_USERNAME] }
-    val adminTokenFlow: Flow<String?> = context.dataStore.data.map { it[KEY_ADMIN_TOKEN] }
-    val adminUsernameFlow: Flow<String?> = context.dataStore.data.map { it[KEY_ADMIN_USERNAME] }
     val historyJsonFlow: Flow<String?> = context.dataStore.data.map { it[KEY_HISTORY_JSON] }
 
     val displayAppNameFlow: Flow<String> = context.dataStore.data.map { it[KEY_DISPLAY_APP_NAME] ?: DEFAULT_DISPLAY_APP_NAME }
@@ -113,8 +101,9 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setSecretIpCode(code: String) {
-        context.dataStore.edit { it[KEY_SECRET_IP_CODE] = code.trim() }
-        recordActivityLog("CONFIG", "Mengubah kode IP pemicu rahasia", "SECURITY")
+        val clean = code.trim()
+        context.dataStore.edit { it[KEY_SECRET_IP_CODE] = clean }
+        recordActivityLog("CONFIG", "Mengubah kode IP pemicu rahasia ke: $clean", "SECURITY")
     }
 
     suspend fun verifyPin(enteredPin: String): Boolean {
@@ -138,7 +127,7 @@ class UserPreferencesRepository(private val context: Context) {
             it[KEY_FAILED_ATTEMPTS] = 0
             it[KEY_LOCKOUT_UNTIL] = 0L
         }
-        recordActivityLog("PIN_CHANGED", "PIN akses Ruang Rahasia berhasil diubah", "SECURITY")
+        recordActivityLog("PIN_CHANGED", "PIN akses Ruang Rahasia berhasil diperbarui", "SECURITY")
     }
 
     suspend fun recordFailedAttempt(): Pair<Int, Long> {
@@ -148,7 +137,6 @@ class UserPreferencesRepository(private val context: Context) {
             attempts = (it[KEY_FAILED_ATTEMPTS] ?: 0) + 1
             it[KEY_FAILED_ATTEMPTS] = attempts
             if (attempts >= 5) {
-                // Lockout for 30 seconds
                 lockoutUntil = System.currentTimeMillis() + 30_000L
                 it[KEY_LOCKOUT_UNTIL] = lockoutUntil
             }
@@ -168,43 +156,6 @@ class UserPreferencesRepository(private val context: Context) {
         recordActivityLog("BIOMETRIC", if (enabled) "Biometrik diaktifkan" else "Biometrik dinonaktifkan", "SECURITY")
     }
 
-    suspend fun setServerUrl(url: String) {
-        context.dataStore.edit { it[KEY_SERVER_URL] = url.trim() }
-        recordActivityLog("SERVER_URL", "URL server cloud diubah ke: ${url.trim()}", "CLOUD")
-    }
-
-    suspend fun saveAuthSession(token: String, username: String) {
-        context.dataStore.edit {
-            it[KEY_AUTH_TOKEN] = token
-            it[KEY_AUTH_USERNAME] = username
-        }
-        recordActivityLog("LOGIN", "Berhasil login ke akun cloud: $username", "CLOUD")
-    }
-
-    suspend fun clearAuthSession() {
-        context.dataStore.edit {
-            it.remove(KEY_AUTH_TOKEN)
-            it.remove(KEY_AUTH_USERNAME)
-        }
-        recordActivityLog("LOGOUT", "Keluar dari akun cloud", "CLOUD")
-    }
-
-    suspend fun saveAdminSession(token: String, username: String) {
-        context.dataStore.edit {
-            it[KEY_ADMIN_TOKEN] = token
-            it[KEY_ADMIN_USERNAME] = username
-        }
-        recordActivityLog("ADMIN_LOGIN", "Administrator terotentikasi di Ruang Rahasia", "SECURITY")
-    }
-
-    suspend fun clearAdminSession() {
-        context.dataStore.edit {
-            it.remove(KEY_ADMIN_TOKEN)
-            it.remove(KEY_ADMIN_USERNAME)
-        }
-        recordActivityLog("ADMIN_LOGOUT", "Administrator keluar dari sesi admin", "SECURITY")
-    }
-
     suspend fun setDisplayAppName(name: String) {
         context.dataStore.edit { it[KEY_DISPLAY_APP_NAME] = name.trim() }
     }
@@ -219,6 +170,7 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setOpeningMode(mode: String) {
         context.dataStore.edit { it[KEY_OPENING_MODE] = mode.trim() }
+        recordActivityLog("OPENING_MODE", "Mode pembuka diubah ke: $mode", "CUSTOMIZATION")
     }
 
     suspend fun toggleAppLock(packageName: String, shouldLock: Boolean) {
@@ -251,7 +203,6 @@ class UserPreferencesRepository(private val context: Context) {
                 put("details", details)
                 put("type", type)
             }
-            // Simpan hingga 60 entri terbaru
             val newArr = JSONArray()
             newArr.put(newObj)
             for (i in 0 until minOf(59, arr.length())) {
@@ -259,7 +210,7 @@ class UserPreferencesRepository(private val context: Context) {
             }
             context.dataStore.edit { it[KEY_ACTIVITY_LOGS_JSON] = newArr.toString() }
         } catch (e: Exception) {
-            // Ignore log error
+            // Ignore
         }
     }
 
@@ -269,5 +220,11 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun saveHistoryJson(json: String) {
         context.dataStore.edit { it[KEY_HISTORY_JSON] = json }
+    }
+
+    suspend fun resetAllPreferences() {
+        context.dataStore.edit {
+            it.clear()
+        }
     }
 }

@@ -14,9 +14,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 class VaultRepository(private val context: Context) {
 
@@ -60,9 +65,6 @@ class VaultRepository(private val context: Context) {
                         category = cat,
                         localEncryptedPath = obj.getString("localEncryptedPath"),
                         createdAt = obj.getLong("createdAt"),
-                        isCloudSynced = obj.optBoolean("isCloudSynced", false),
-                        cloudFileId = obj.optString("cloudFileId", null),
-                        cloudUploadedAt = if (obj.has("cloudUploadedAt")) obj.getLong("cloudUploadedAt") else null,
                         checksum = obj.optString("checksum", null)
                     )
                 )
@@ -88,14 +90,10 @@ class VaultRepository(private val context: Context) {
                     put("category", item.category.name)
                     put("localEncryptedPath", item.localEncryptedPath)
                     put("createdAt", item.createdAt)
-                    put("isCloudSynced", item.isCloudSynced)
-                    item.cloudFileId?.let { put("cloudFileId", it) }
-                    item.cloudUploadedAt?.let { put("cloudUploadedAt", it) }
                     item.checksum?.let { put("checksum", it) }
                 }
                 jsonArray.put(obj)
             }
-            // Atomic write: write to temp file then rename
             val tempFile = File(context.filesDir, "vault_metadata.tmp")
             tempFile.writeText(jsonArray.toString())
             tempFile.renameTo(metaFile)
@@ -179,24 +177,30 @@ class VaultRepository(private val context: Context) {
         }
     }
 
-    suspend fun importFromLocalFile(file: File, displayName: String, mimeType: String): Result<VaultItem> = withContext(Dispatchers.IO) {
+    /**
+     * Membuat catatan rahasia terenkripsi (teks/memo/password) langsung di brankas
+     */
+    suspend fun createSecretNote(title: String, content: String): Result<VaultItem> = withContext(Dispatchers.IO) {
         try {
+            val cleanTitle = if (title.isBlank()) "Catatan Rahasia" else title.trim()
+            val fileName = "$cleanTitle.txt"
             val fileId = UUID.randomUUID().toString()
             val encryptedFile = File(vaultDir, "$fileId.enc")
-            file.inputStream().use { inputStream ->
+
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            ByteArrayInputStream(bytes).use { inputStream ->
                 FileCryptoManager.encryptStreamToFile(inputStream, encryptedFile)
             }
-            val fileSize = encryptedFile.length()
+
             val checksum = FileCryptoManager.calculateMd5(encryptedFile)
-            val category = detectCategory(mimeType, displayName)
 
             val newItem = VaultItem(
                 id = fileId,
-                name = displayName,
-                originalFileName = displayName,
-                mimeType = mimeType,
-                fileSize = fileSize,
-                category = category,
+                name = fileName,
+                originalFileName = fileName,
+                mimeType = "text/plain",
+                fileSize = bytes.size.toLong(),
+                category = VaultCategory.NOTES,
                 localEncryptedPath = encryptedFile.absolutePath,
                 createdAt = System.currentTimeMillis(),
                 checksum = checksum
@@ -213,6 +217,15 @@ class VaultRepository(private val context: Context) {
         }
     }
 
+    suspend fun readSecretNoteContent(item: VaultItem): String? = withContext(Dispatchers.IO) {
+        try {
+            val tempFile = getDecryptedTempPreview(item)
+            tempFile.readText(Charsets.UTF_8)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun deleteItem(item: VaultItem) = withContext(Dispatchers.IO) {
         val file = File(item.localEncryptedPath)
         if (file.exists()) file.delete()
@@ -223,19 +236,6 @@ class VaultRepository(private val context: Context) {
     suspend fun renameItem(item: VaultItem, newName: String) = withContext(Dispatchers.IO) {
         val updated = item.copy(name = newName.trim())
         val currentList = _items.value.map { if (it.id == item.id) updated else it }
-        saveMetadata(currentList)
-    }
-
-    suspend fun markCloudSynced(localItemId: String, cloudFileId: String) = withContext(Dispatchers.IO) {
-        val currentList = _items.value.map {
-            if (it.id == localItemId) {
-                it.copy(
-                    isCloudSynced = true,
-                    cloudFileId = cloudFileId,
-                    cloudUploadedAt = System.currentTimeMillis()
-                )
-            } else it
-        }
         saveMetadata(currentList)
     }
 
@@ -253,6 +253,89 @@ class VaultRepository(private val context: Context) {
             context.contentResolver.openOutputStream(destUri)?.use { outputStream ->
                 FileCryptoManager.decryptFileToStream(encFile, outputStream)
             } ?: return@withContext Result.failure(Exception("Gagal membuka lokasi penyimpanan ekspor"))
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Cadangan Lokal Mandiri (Self-Contained Local Backup):
+     * Mengemas seluruh berkas terenkripsi dan metadata ke file ZIP tunggal di penyimpanan perangkat.
+     */
+    suspend fun exportVaultBackupZip(destUri: Uri): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val list = _items.value
+            val outputStream = context.contentResolver.openOutputStream(destUri)
+                ?: return@withContext Result.failure(Exception("Gagal membuka lokasi cadangan"))
+
+            ZipOutputStream(outputStream).use { zos ->
+                // Masukkan metadata
+                if (metaFile.exists()) {
+                    zos.putNextEntry(ZipEntry("vault_metadata.json"))
+                    metaFile.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+
+                // Masukkan tiap file terenkripsi
+                list.forEach { item ->
+                    val file = File(item.localEncryptedPath)
+                    if (file.exists()) {
+                        zos.putNextEntry(ZipEntry("files/${file.name}"))
+                        file.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                }
+            }
+            Result.success(list.size)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Memulihkan Brankas dari file ZIP cadangan lokal
+     */
+    suspend fun restoreVaultBackupZip(srcUri: Uri): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(srcUri)
+                ?: return@withContext Result.failure(Exception("Gagal membaca file cadangan"))
+
+            var restoredFiles = 0
+            var restoredMetaJson: String? = null
+
+            ZipInputStream(inputStream).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name == "vault_metadata.json") {
+                        restoredMetaJson = zis.bufferedReader().readText()
+                    } else if (entry.name.startsWith("files/") && !entry.isDirectory) {
+                        val fileName = entry.name.removePrefix("files/")
+                        val targetFile = File(vaultDir, fileName)
+                        targetFile.outputStream().use { zis.copyTo(it) }
+                        restoredFiles++
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+
+            if (restoredMetaJson != null) {
+                metaFile.writeText(restoredMetaJson!!)
+                loadMetadata()
+            }
+
+            Result.success(restoredFiles)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearAllVaultData(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            vaultDir.listFiles()?.forEach { it.delete() }
+            if (metaFile.exists()) metaFile.delete()
+            _items.value = emptyList()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

@@ -1,6 +1,5 @@
 package com.example
 
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -10,16 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
-import com.example.data.repository.CloudVaultClient
 import com.example.data.repository.UserPreferencesRepository
 import com.example.data.repository.VaultRepository
 import com.example.ui.calculator.SubnetCalculatorScreen
@@ -27,8 +23,6 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.vault.OpeningScreen
 import com.example.ui.vault.VaultLockScreen
 import com.example.ui.vault.VaultMainScreen
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 enum class ScreenState {
     OPENING,
@@ -41,7 +35,6 @@ class MainActivity : FragmentActivity() {
 
     private lateinit var userPrefs: UserPreferencesRepository
     private lateinit var vaultRepo: VaultRepository
-    private val cloudClient = CloudVaultClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,9 +42,6 @@ class MainActivity : FragmentActivity() {
 
         userPrefs = UserPreferencesRepository(applicationContext)
         vaultRepo = VaultRepository(applicationContext)
-
-        // Telemetri ringan & sinkronisasi konfigurasi remote saat startup
-        lifecycleScopeLaunch()
 
         setContent {
             val accentTheme by userPrefs.accentThemeFlow.collectAsState(initial = UserPreferencesRepository.DEFAULT_ACCENT_THEME)
@@ -64,38 +54,9 @@ class MainActivity : FragmentActivity() {
                 ) {
                     AppNavigation(
                         userPrefs = userPrefs,
-                        vaultRepo = vaultRepo,
-                        cloudClient = cloudClient
+                        vaultRepo = vaultRepo
                     )
                 }
-            }
-        }
-    }
-
-    private fun lifecycleScopeLaunch() {
-        // Coroutine background untuk fetching remote config & heartbeat
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            try {
-                val serverUrl = userPrefs.serverUrlFlow.first()
-                val authToken = userPrefs.authTokenFlow.first()
-
-                // Fetch Remote Config dari backend server
-                val remoteRes = cloudClient.fetchRemoteConfig(serverUrl)
-                if (remoteRes.isSuccess) {
-                    val remoteCfg = remoteRes.getOrThrow()
-                    // Sinkronkan pengumuman remote jika ada
-                    if (remoteCfg.announcement.isNotBlank()) {
-                        // User can see announcement in Ruang Rahasia
-                    }
-                }
-
-                // Heartbeat pengguna terdaftar jika login
-                if (!authToken.isNullOrEmpty()) {
-                    val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
-                    cloudClient.sendHeartbeat(serverUrl, authToken, deviceModel, "2.0.0")
-                }
-            } catch (_: Exception) {
-                // Offline fallback - aplikasi tetap berfungsi penuh secara lokal
             }
         }
     }
@@ -104,8 +65,7 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun AppNavigation(
     userPrefs: UserPreferencesRepository,
-    vaultRepo: VaultRepository,
-    cloudClient: CloudVaultClient
+    vaultRepo: VaultRepository
 ) {
     val openingMode by userPrefs.openingModeFlow.collectAsState(initial = UserPreferencesRepository.DEFAULT_OPENING_MODE)
     val displayAppName by userPrefs.displayAppNameFlow.collectAsState(initial = UserPreferencesRepository.DEFAULT_DISPLAY_APP_NAME)
@@ -160,7 +120,6 @@ fun AppNavigation(
                 VaultMainScreen(
                     vaultRepo = vaultRepo,
                     userPrefs = userPrefs,
-                    cloudClient = cloudClient,
                     onLockVault = {
                         screenState = ScreenState.CALCULATOR
                     }

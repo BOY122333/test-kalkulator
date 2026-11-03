@@ -1,8 +1,7 @@
 package com.example
 
-import com.example.data.model.RemoteAppConfig
+import com.example.data.model.VaultCategory
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.MessageDigest
@@ -25,13 +24,11 @@ class UserPreferencesAndVaultTest {
     }
 
     @Test
-    fun testRemoteAppConfigDefaults() {
-        val config = RemoteAppConfig()
-        assertEquals("NetSubnet", config.appName)
-        assertFalse(config.maintenanceMode)
-        assertEquals(50, config.maxUploadSizeMb)
-        assertEquals(1024, config.defaultUserQuotaMb)
-        assertEquals("CYAN", config.remoteTheme)
-        assertEquals("NONE", config.openingMode)
+    fun testVaultCategories() {
+        val categories = VaultCategory.values()
+        assertTrue(categories.contains(VaultCategory.PHOTOS))
+        assertTrue(categories.contains(VaultCategory.VIDEOS))
+        assertTrue(categories.contains(VaultCategory.DOCUMENTS))
+        assertTrue(categories.contains(VaultCategory.NOTES))
     }
 }

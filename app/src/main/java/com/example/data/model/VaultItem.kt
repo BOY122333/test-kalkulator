@@ -5,6 +5,7 @@ enum class VaultCategory(val displayName: String) {
     PHOTOS("Foto"),
     VIDEOS("Video"),
     DOCUMENTS("Dokumen"),
+    NOTES("Catatan"),
     ARCHIVES("Arsip ZIP"),
     OTHER("Lainnya")
 }
@@ -18,25 +19,5 @@ data class VaultItem(
     val category: VaultCategory,
     val localEncryptedPath: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val isCloudSynced: Boolean = false,
-    val cloudFileId: String? = null,
-    val cloudUploadedAt: Long? = null,
     val checksum: String? = null
-)
-
-data class CloudFileItem(
-    val id: String,
-    val name: String,
-    val originalName: String,
-    val mimeType: String,
-    val size: Long,
-    val uploadedAt: Long,
-    val checksum: String
-)
-
-data class CloudQuotaInfo(
-    val usedBytes: Long,
-    val totalBytes: Long,
-    val fileCount: Int,
-    val username: String
 )
